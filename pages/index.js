@@ -21,11 +21,25 @@ const Draw = () => {
     context.lineWidth = 5;
     context.fillStyle = "black";
     context.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Disable scrolling on touch devices
+    const preventScroll = (event) => {
+      event.preventDefault();
+    };
+
+    canvas.addEventListener("touchmove", preventScroll, { passive: false });
+
+    return () => {
+      canvas.removeEventListener("touchmove", preventScroll);
+    };
   }, []);
 
-  const startDrawing = () => {
+  const startDrawing = (event) => {
     isDrawingRef.current = true;
     contextRef.current.beginPath();
+    const { clientX, clientY } = getEventPosition(event);
+    const rect = canvasRef.current.getBoundingClientRect();
+    contextRef.current.moveTo(clientX - rect.left, clientY - rect.top);
   };
 
   const endDrawing = () => {
@@ -36,22 +50,22 @@ const Draw = () => {
 
   const draw = (event) => {
     if (!isDrawingRef.current) return;
+    const { clientX, clientY } = getEventPosition(event);
     const rect = canvasRef.current.getBoundingClientRect();
-    contextRef.current.lineTo(
-      event.clientX - rect.left,
-      event.clientY - rect.top
-    );
+    contextRef.current.lineTo(clientX - rect.left, clientY - rect.top);
     contextRef.current.stroke();
+  };
+
+  const getEventPosition = (event) => {
+    if (event.touches && event.touches.length > 0) {
+      return { clientX: event.touches[0].clientX, clientY: event.touches[0].clientY };
+    }
+    return { clientX: event.clientX, clientY: event.clientY };
   };
 
   const saveCanvasState = () => {
     const canvas = canvasRef.current;
-    const imageData = contextRef.current.getImageData(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
+    const imageData = contextRef.current.getImageData(0, 0, canvas.width, canvas.height);
     setUndoStack((prev) => [...prev, imageData]);
     setRedoStack([]);
   };
@@ -94,28 +108,6 @@ const Draw = () => {
     saveCanvasState();
   };
 
-  // Function for wrapping text
-  const wrapText = (context, text, x, y, maxWidth, lineHeight) => {
-    const words = text.split(" ");
-    let line = "";
-    let lineY = y;
-
-    for (let i = 0; i < words.length; i++) {
-      const testLine = line + words[i] + " ";
-      const metrics = context.measureText(testLine);
-      const testWidth = metrics.width;
-
-      if (testWidth > maxWidth && i > 0) {
-        context.fillText(line, x, lineY);
-        line = words[i] + " ";
-        lineY += lineHeight;
-      } else {
-        line = testLine;
-      }
-    }
-    context.fillText(line, x, lineY); // Draw the last line
-  };
-
   const handleRun = async () => {
     const canvas = canvasRef.current;
     const imageDataURL = canvas.toDataURL("image/jpeg");
@@ -153,22 +145,35 @@ const Draw = () => {
         context.textBaseline = "middle";
 
         const outputText = `${expr} = ${calcResult}`;
-        const maxWidth = canvas.width * 0.8; // Set the max width as 80% of the canvas width
-        const lineHeight = 50; // Adjust the line height as needed
+        const maxWidth = canvas.width * 0.8;
+        const lineHeight = 50;
 
-        // Use wrapText to draw the result with wrapping
-        wrapText(
-          context,
-          outputText,
-          canvas.width / 2, // Center horizontally
-          canvas.height / 2, // Start vertically centered
-          maxWidth,
-          lineHeight
-        );
+        wrapText(context, outputText, canvas.width / 2, canvas.height / 2, maxWidth, lineHeight);
       }
     } catch (error) {
       console.error("Error during analysis:", error);
     }
+  };
+
+  const wrapText = (context, text, x, y, maxWidth, lineHeight) => {
+    const words = text.split(" ");
+    let line = "";
+    let lineY = y;
+
+    for (let i = 0; i < words.length; i++) {
+      const testLine = line + words[i] + " ";
+      const metrics = context.measureText(testLine);
+      const testWidth = metrics.width;
+
+      if (testWidth > maxWidth && i > 0) {
+        context.fillText(line, x, lineY);
+        line = words[i] + " ";
+        lineY += lineHeight;
+      } else {
+        line = testLine;
+      }
+    }
+    context.fillText(line, x, lineY); // Draw the last line
   };
 
   return (
@@ -188,10 +193,7 @@ const Draw = () => {
           ))}
         </div>
 
-        <div
-          className="ml-4 w-5 h-5 rounded-full border-2 border-white"
-          style={{ backgroundColor: color }}
-        />
+        <div className="ml-4 w-5 h-5 rounded-full border-2 border-white" style={{ backgroundColor: color }} />
 
         <button onClick={handleEraserToggle} className="ml-4">
           <FontAwesomeIcon icon={faEraser} className="text-white" size="lg" />
@@ -222,6 +224,9 @@ const Draw = () => {
         onMouseDown={startDrawing}
         onMouseUp={endDrawing}
         onMouseMove={draw}
+        onTouchStart={startDrawing}
+        onTouchEnd={endDrawing}
+        onTouchMove={draw}
         className="cursor-crosshair"
       />
     </div>
